@@ -20,26 +20,26 @@ export function createUI() {
     <div id="loading"><div class="loading-mark">${icon('campus')}</div><span class="eyebrow">CAMPUS</span><h1>A world just around the corner.</h1><div class="load-track"><i></i></div><p>Preparing the grounds…</p></div>
     <header class="hud topbar">
       <a class="brand" href="#" aria-label="Campus home"><span class="brand-mark">${icon('campus')}</span><span>campus<span class="brand-caption">A PLACE TO WANDER</span></span></a>
-      <div class="session"><span class="session-dot"></span>Single player<span class="session-divider"></span><span>Free roam</span></div>
+      <div class="session"><span class="session-dot"></span><span id="session-label">Choose your walk</span><span class="session-divider"></span><span id="population">Public campus</span></div>
       <nav aria-label="Game controls"><button id="wave-button" class="icon-button" aria-label="Wave" title="Wave while standing (Q)" hidden>${icon('wave')}</button><button id="map-button" class="icon-button" aria-label="Open campus map" title="Campus map (M)">${icon('map')}</button><button id="settings-button" class="icon-button" aria-label="Open settings" title="Settings">${icon('settings')}</button></nav>
     </header>
     <div class="hud north"><span>N</span><i></i></div>
-    <section id="welcome" class="hud welcome"><div class="eyebrow"><span class="small-line"></span> YOUR WALK STARTS HERE</div><h1>Welcome to<br><em>campus.</em></h1><p>Familiar paths. A quiet café. A seat in the shade.<br>Take a look around, at your own pace.</p><button id="start-button" class="primary">Start exploring ${icon('arrow')}</button><div class="welcome-note">${icon('leaf')} No rush. No destination required.</div></section>
+    <section id="welcome" class="hud welcome"><div class="eyebrow"><span class="small-line"></span> YOUR WALK STARTS HERE</div><h1>Welcome to <br><em>campus.</em></h1><p>Familiar paths. A quiet café. A seat in the shade.<br>Take a look around, at your own pace.</p><label class="join-name" for="display-name">Your display name</label><input id="display-name" class="name-input" maxlength="24" autocomplete="nickname" placeholder="Campus explorer" value="Guest" /><button id="join-button" class="primary">Join public campus ${icon('arrow')}</button><p id="join-status" class="join-status" role="status"></p><button id="start-button" class="offline-button">Explore offline</button><div class="welcome-note">${icon('leaf')} No rush. No destination required.</div></section>
     <section id="location-card" class="hud location-card" hidden><div class="eyebrow">${icon('location')} <span id="location-category">THE GROUNDS</span></div><h1 id="location-title">Main courtyard</h1><p id="location-subtitle">Academic block · South entrance</p><div class="visited"><span id="visited-count">0</span> / 5 places discovered <span class="visited-track"><i id="visited-fill"></i></span></div></section>
     <div id="interaction" class="hud interaction" hidden><button id="interact-button"><kbd>E</kbd><span id="interaction-label">Open door</span>${icon('arrow')}</button></div>
     <div class="hud bottom-controls" id="desktop-controls"><span><kbd>W</kbd><span class="wasd-bottom"><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></span><span>Walk</span><i></i><span class="mouse-icon"></span><span>Drag to look</span><i></i><kbd>⇧</kbd><span>Run</span></div>
     <button id="help-button" class="hud help-button" aria-label="Show controls">${icon('help')}</button>
     <button id="minimap-button" class="hud minimap" aria-label="Open campus map"><div class="map-heading"><span>YOUR LITTLE WORLD</span>${icon('expand')}</div><canvas id="minimap" width="360" height="280"></canvas><div class="map-footer"><span id="map-location">Main courtyard</span><span>N ↑</span></div></button>
     <div class="hud touch-controls" id="touch-controls"><div id="joystick" aria-label="Movement joystick"><div id="joystick-knob"></div></div><button id="run-button" aria-label="Toggle running">RUN</button><span class="touch-look-hint">Drag the right side to look</span></div>
-    <div id="toast" role="status" hidden></div>
+    <div id="toast" role="status" hidden></div><div id="connection-banner" class="hud connection-banner" hidden><span id="connection-message" role="status"></span><button id="retry-button">Retry</button><button id="offline-button">Play offline</button></div>
     <dialog id="map-dialog" aria-labelledby="map-title"><div class="dialog-head"><div><span class="eyebrow">FIND YOUR WAY</span><h2 id="map-title">The campus</h2></div><button class="icon-button close-dialog" aria-label="Close map">${icon('close')}</button></div><canvas id="large-map" width="1100" height="850" aria-label="Campus map showing your position, academic block, café, and palm garden"></canvas><div class="map-key"><span><i class="you-dot"></i>You are here</span><span><i class="building-dot"></i>Buildings</span><span><i class="garden-dot"></i>Green spaces</span></div><p class="dialog-note">Classrooms are inside the academic block. The café entrance faces south.</p></dialog>
-    <dialog id="settings-dialog" aria-labelledby="settings-title"><div class="dialog-head"><div><span class="eyebrow">MAKE YOURSELF COMFORTABLE</span><h2 id="settings-title">Settings</h2></div><button class="icon-button close-dialog" aria-label="Close settings">${icon('close')}</button></div><label class="setting-row"><span>Graphics quality<small>Lower settings help on slower devices.</small></span><select id="quality"><option value="low">Low</option><option value="balanced" selected>Balanced</option><option value="high">High</option></select></label><label class="setting-row"><span>Camera sensitivity</span><input id="sensitivity" type="range" min="0.4" max="2" step="0.1" value="1" /></label><label class="setting-row"><span>Ambient sound<small>Soft wind and distant birds.</small></span><input id="sound" type="checkbox" /></label><button id="fullscreen-button" class="secondary">${icon('expand')} Toggle fullscreen</button><button id="reset-button" class="secondary">Return to campus entrance</button><p class="dialog-note">Your position and settings are saved on this device.</p></dialog>
+    <dialog id="settings-dialog" aria-labelledby="settings-title"><div class="dialog-head"><div><span class="eyebrow">MAKE YOURSELF COMFORTABLE</span><h2 id="settings-title">Settings</h2></div><button class="icon-button close-dialog" aria-label="Close settings">${icon('close')}</button></div><label class="setting-row"><span>Graphics quality<small>Lower settings help on slower devices.</small></span><select id="quality"><option value="low">Low</option><option value="balanced" selected>Balanced</option><option value="high">High</option></select></label><label class="setting-row"><span>Camera sensitivity</span><input id="sensitivity" type="range" min="0.4" max="2" step="0.1" value="1" /></label><label class="setting-row"><span>Ambient sound<small>Soft wind and distant birds.</small></span><input id="sound" type="checkbox" /></label><button id="fullscreen-button" class="secondary">${icon('expand')} Toggle fullscreen</button><button id="leave-button" class="secondary" hidden>Leave public campus · play offline</button><button id="reset-button" class="secondary">Return to campus entrance</button><p class="dialog-note">Offline position and settings are saved on this device. Online sessions reconnect for up to 30 seconds.</p></dialog>
     <dialog id="help-dialog" aria-labelledby="help-title"><div class="dialog-head"><div><span class="eyebrow">SETTLE IN</span><h2 id="help-title">A few simple controls</h2></div><button class="icon-button close-dialog" aria-label="Close controls">${icon('close')}</button></div><div class="help-grid"><span>Walk</span><span><kbd>W A S D</kbd> or arrow keys</span><span>Look around</span><span>Click and drag / swipe</span><span>Run</span><span>Hold <kbd>Shift</kbd> / tap RUN</span><span>Use doors & seats</span><span><kbd>E</kbd> / tap the prompt</span><span>Wave while standing</span><span><kbd>Q</kbd> / hand button</span><span>Campus map</span><span><kbd>M</kbd> / map button</span><span>Pause</span><span><kbd>Esc</kbd></span></div><p class="dialog-note">On a phone, use the left joystick to move and drag the right side of the screen to look. Move closer to a door or bench to interact.</p></dialog>
     <dialog id="sign-dialog" aria-labelledby="sign-title"><div class="dialog-head"><div><span class="eyebrow">A QUIETER CORNER</span><h2 id="sign-title">Palm garden</h2></div><button class="icon-button close-dialog" aria-label="Close garden sign">${icon('close')}</button></div><p class="sign-copy">A little green space between classes. Follow the circular path, find a bench, and enjoy a moment under the palms.</p></dialog>
   `;
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const canvas = $<HTMLCanvasElement>('world');
-  let onStart = () => {}, onPause = (_paused: boolean) => {}, onInteract = () => {}, onReset = () => {}, onSettings = (_settings: Settings) => {};
+  let onStart = (_mode:'online'|'offline',_name:string) => {}, onPause = (_paused: boolean) => {}, onInteract = () => {}, onReset = () => {}, onSettings = (_settings: Settings) => {};
   let started = false, toastTimer = 0, lastFocus: HTMLElement | null = null;
   const settings: Settings = { quality: matchMedia('(pointer: coarse)').matches ? 'low' : 'balanced', sensitivity: 1, sound: false };
   const settingsKey = import.meta.env.DEV && new URLSearchParams(location.search).has('smoke') ? 'campus-test-settings' : 'campus-settings';
@@ -58,7 +58,12 @@ export function createUI() {
     d.addEventListener('click', e => { if (e.target === d) { const r = d.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) d.close(); } });
     d.addEventListener('close', () => { onPause(!started); lastFocus?.focus(); });
   });
-  $('start-button').onclick = () => { started = true; $('wave-button').hidden = false; $('welcome').hidden = true; $('location-card').hidden = false; document.body.classList.add('playing'); onStart(); canvas.focus(); };
+  const name=()=>($<HTMLInputElement>('display-name').value.trim()||'Guest').slice(0,24);
+  const begin=()=>{started=true;$('wave-button').hidden=false;$('welcome').hidden=true;$('location-card').hidden=false;document.body.classList.add('playing');canvas.focus();};
+  const offline=()=>{for(const dialog of document.querySelectorAll<HTMLDialogElement>('dialog[open]'))dialog.close();begin();onStart('offline',name());};
+  $('start-button').onclick=$('offline-button').onclick=$('leave-button').onclick=offline;
+  $('join-button').onclick=$('retry-button').onclick=()=>onStart('online',name());
+  $<HTMLInputElement>('display-name').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();onStart('online',name());}});
   $('map-button').onclick = $('minimap-button').onclick = () => showDialog('map-dialog');
   $('settings-button').onclick = () => showDialog('settings-dialog');
   $('help-button').onclick = () => showDialog('help-dialog');
@@ -73,14 +78,27 @@ export function createUI() {
     onSettings(settings);
   });
   document.addEventListener('keydown', e => {
-    if (document.querySelector('dialog[open]')) return;
+    if (document.querySelector('dialog[open]') || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
     if (e.code === 'KeyM') { e.preventDefault(); showDialog('map-dialog'); }
     if (e.code === 'Escape' && started) showDialog('settings-dialog');
   });
   function toast(message: string) { const el=$('toast'); el.textContent=message; el.hidden=false; clearTimeout(toastTimer); toastTimer=window.setTimeout(()=>el.hidden=true,4200); }
   let lastPlace = '';
-  return { canvas, settings, toast, showSign: () => showDialog('sign-dialog'),
-    bind(handlers: { start: () => void; pause: (p: boolean) => void; interact: () => void; reset: () => void; settings: (s: Settings) => void }) { onStart=handlers.start; onPause=handlers.pause; onInteract=handlers.interact; onReset=handlers.reset; onSettings=handlers.settings; },
+  return { canvas, settings, toast, begin,
+    connection(status:string,count=0,reserved=0){
+      const busy=status==='connecting'||status==='reconnecting';
+      $<HTMLButtonElement>('join-button').disabled=busy;
+      $('session-label').textContent=status==='online'?'Public campus':status==='offline'?'Offline':status==='full'?'Campus full':busy?'Connecting…':'Disconnected';
+      $('population').textContent=status==='online'?`${count} / 50 online${reserved?` · ${reserved} reconnecting`:''}`:'Free roam';
+      $('leave-button').hidden=status==='offline';
+      const message=status==='full'?'Campus full — 50/50. Try again shortly.':status==='failed'?'Connection unavailable. Retry or explore offline.':busy?'Connecting to the public campus…':'';
+      $('join-status').textContent=message;
+      $('connection-banner').hidden=!started||!message;
+      $('connection-message').textContent=message;
+      $<HTMLButtonElement>('retry-button').disabled=busy;
+    },
+    showSign: () => showDialog('sign-dialog'),
+    bind(handlers: { start: (mode:'online'|'offline',name:string) => void; pause: (p: boolean) => void; interact: () => void; reset: () => void; settings: (s: Settings) => void }) { onStart=handlers.start; onPause=handlers.pause; onInteract=handlers.interact; onReset=handlers.reset; onSettings=handlers.settings; },
     ready() { $('loading').classList.add('loaded'); window.setTimeout(()=>$('loading').remove(),650); },
     fail(message: string) { $('loading').innerHTML = `<div class="loading-mark">${icon('campus')}</div><h1>We couldn’t open the campus.</h1><p>${message}</p><button class="primary" onclick="location.reload()">Try again</button>`; },
     location(place: Place, visited: number) {

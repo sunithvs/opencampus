@@ -1,6 +1,6 @@
 // Development-only integration checks, exercised by opening /?smoke in the browser.
 // These drive the same DOM keyboard events and controls as a player, with isolated saves.
-type Snapshot = { x: number; z: number; paused: boolean; seated: boolean; place: string; interaction?: string; fps: number; player: { animation: string; animationPaused: boolean; bones: number; face: string; clips: string[]; animationFrame: number; weights: Record<string, number> } };
+type Snapshot = { connected: boolean; remotePlayers: number; population: number; trees: { palm: number; shade: number; batches: number }; x: number; z: number; paused: boolean; seated: boolean; place: string; interaction?: string; fps: number; player: { animation: string; animationPaused: boolean; bones: number; face: string; clips: string[]; animationFrame: number; weights: Record<string, number> } };
 export async function runSmoke(game: { snapshot: () => Snapshot }) {
   const panel=document.createElement('pre');panel.id='smoke-results';panel.style.cssText='position:fixed;z-index:200;top:100px;left:10px;max-width:380px;max-height:50vh;overflow:auto;padding:15px;background:#10271fe8;color:#edffe8;font:12px/1.5 monospace;pointer-events:none;border-radius:8px;white-space:pre-wrap;';document.body.append(panel);
   const result=(text:string)=>panel.textContent+=`${text}\n`;
@@ -11,11 +11,22 @@ export async function runSmoke(game: { snapshot: () => Snapshot }) {
   const travel=async(code:string,predicate:(s:Snapshot)=>boolean,timeout=15000)=>{
     const start=performance.now();key('ShiftLeft');key(code);
     while(!predicate(game.snapshot())){if(performance.now()-start>timeout){key(code,'keyup');key('ShiftLeft','keyup');throw new Error(`Movement ${code} timed out: ${JSON.stringify(game.snapshot())}`);}await wait(25);}
-    key(code,'keyup');key('ShiftLeft','keyup');await wait(80);
+    key(code,'keyup');key('ShiftLeft','keyup');await wait(350);
   };
   try {
-    await wait(800);click('start-button');await wait(100);
+    const multiplayer=new URLSearchParams(location.search).get('smoke')==='online';
+    await wait(800);
+    if(multiplayer){
+      (document.getElementById('display-name') as HTMLInputElement).value='Smoke explorer';click('join-button');
+      const deadline=performance.now()+10000;
+      while(!game.snapshot().connected){if(performance.now()>deadline)throw Error('Public campus connection timed out');await wait(50);}
+      click('settings-button');click('reset-button');await wait(600);assert(game.snapshot().connected,'Browser joins authoritative campus');
+      if(game.snapshot().population>1)assert(game.snapshot().remotePlayers>0,'Other guests render as independent avatars');
+    }else click('start-button');
+    await wait(100);
     assert(!game.snapshot().paused,'Start exploring begins play');
+    const trees=game.snapshot().trees;
+    assert(trees.palm===22 && trees.shade>60 && trees.batches===4,'Blender palms and shade trees load in four instanced batches');
     assert(game.snapshot().player.bones>=16 && game.snapshot().player.face==='FaceImage','Rigged GLB and square face loaded');
     assert(game.snapshot().player.clips.length===5,'All five animation clips loaded');
     click('wave-button');await wait(250);
@@ -36,6 +47,8 @@ export async function runSmoke(game: { snapshot: () => Snapshot }) {
     assert(game.snapshot().player.animation==='Idle' && game.snapshot().player.weights.Idle>.95,'Stopping blends back to Idle');
     await travel('KeyW',s=>s.z<=-21.2);
     assert(game.snapshot().place==='Academic block','Walk from entrance into academic hall');
+    await travel('KeyA',s=>s.x>=2.6);
+    if(document.getElementById('interaction-label')!.textContent?.startsWith('Close')){key('KeyE');key('KeyE','keyup');await wait(400);}
     await travel('KeyA',s=>s.x>=3.45);
     key('KeyA');await wait(350);key('KeyA','keyup');
     assert(game.snapshot().x<3.8,'Closed classroom door blocks entry');
@@ -50,7 +63,7 @@ export async function runSmoke(game: { snapshot: () => Snapshot }) {
     assert(game.snapshot().paused && (document.getElementById('map-dialog') as HTMLDialogElement).open,'Map pauses the game');
     (document.querySelector('#map-dialog .close-dialog') as HTMLButtonElement).click();await wait(80);
     assert(!game.snapshot().paused,'Closing map resumes play');
-    click('settings-button');click('reset-button');await wait(80);
+    click('settings-button');click('reset-button');await wait(500);
     assert(Math.abs(game.snapshot().z-29)<.1,'Return to entrance resets player');
     await travel('KeyW',s=>s.z<17.5);
     await travel('KeyA',s=>s.x>44,12000);
@@ -60,7 +73,7 @@ export async function runSmoke(game: { snapshot: () => Snapshot }) {
     key('KeyE');key('KeyE','keyup');await wait(350);assert(!game.snapshot().seated && game.snapshot().player.animation==='Idle','Player stands and returns to Idle');
     await travel('KeyW',s=>s.z<11,5000);
     assert(game.snapshot().place==='The Campus Café','Café interior is reachable');
-    click('settings-button');click('reset-button');await wait(80);
+    click('settings-button');click('reset-button');await wait(500);
     const q=document.getElementById('quality') as HTMLSelectElement;q.value='low';q.dispatchEvent(new Event('change',{bubbles:true}));
     assert(q.value==='low','Graphics preset changes');
     assert(Number.isFinite(game.snapshot().x),'Render loop and player state remain valid');

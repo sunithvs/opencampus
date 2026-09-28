@@ -1,0 +1,32 @@
+[
+  {
+    "file": "campus-palm.glb",
+    "bytes": 718460,
+    "parts": [
+      {
+        "name": "Palm_Bark",
+        "triangles": 4448
+      },
+      {
+        "name": "Palm_Foliage",
+        "triangles": 3240
+      }
+    ],
+    "triangles": 7688
+  },
+  {
+    "file": "campus-shade-tree.glb",
+    "bytes": 823184,
+    "parts": [
+      {
+        "name": "ShadeTree_Bark",
+        "triangles": 1780
+      },
+      {
+        "name": "ShadeTree_Foliage",
+        "triangles": 5984
+      }
+    ],
+    "triangles": 7764
+  }
+]

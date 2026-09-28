@@ -5,23 +5,27 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc && vite build",
+    "build": "tsc && tsc -p tsconfig.worker.json && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "tsx --test src/game/*.test.ts",
+    "test": "tsx --test src/game/*.test.ts shared/*.test.ts",
     "deploy": "npm run build && wrangler deploy",
     "cf:check": "npm run build && wrangler deploy --dry-run",
-    "cf:dev": "npm run build && wrangler dev --ip 127.0.0.1 --port 8787"
+    "cf:dev": "npm run build && wrangler dev --ip 127.0.0.1 --port 8787",
+    "test:multiplayer": "node scripts/test-multiplayer.mjs",
+    "dev:server": "wrangler dev --ip 127.0.0.1 --port 8787"
   },
   "dependencies": {
     "@babylonjs/core": "^8.0.0",
     "@babylonjs/loaders": "8.56.2"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20260928.1",
     "@types/node": "^22.0.0",
     "tsx": "^4.20.0",
     "typescript": "~5.9.2",
     "vite": "^7.1.0",
-    "wrangler": "4.142.0"
+    "wrangler": "4.142.0",
+    "ws": "^8.22.0"
   },
   "engines": {
     "node": ">=22.12.0"

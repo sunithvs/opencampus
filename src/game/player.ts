@@ -1,6 +1,7 @@
 import { Scene } from '@babylonjs/core/scene';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
-import { ImportMeshAsync } from '@babylonjs/core/Loading/sceneLoader';
+import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader';
+import type { AssetContainer } from '@babylonjs/core/assetContainer';
 import type { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
 import type { ShadowGenerator } from '@babylonjs/core/Lights/Shadows/shadowGenerator';
 import '@babylonjs/loaders/glTF/2.0/glTFLoader';
@@ -8,16 +9,16 @@ import '@babylonjs/loaders/glTF/2.0/glTFLoader';
 const clipNames = ['Idle', 'Walk', 'Run', 'Sit', 'Wave'] as const;
 type Clip = typeof clipNames[number];
 
-export async function createPlayer(scene: Scene, shadows: ShadowGenerator) {
-  const model = await ImportMeshAsync(`${import.meta.env.BASE_URL}models/campus-student.glb`, scene);
+const containers=new WeakMap<Scene,Promise<AssetContainer>>();
+export async function createPlayer(scene: Scene, shadows: ShadowGenerator, castShadow=true) {
+  let promise=containers.get(scene);
+  if(!promise){promise=LoadAssetContainerAsync(`${import.meta.env.BASE_URL}models/campus-student.glb`,scene);containers.set(scene,promise);}
+  const container=await promise;
+  const model=container.instantiateModelsToScene(name=>name,false,{doNotInstantiate:true});
+  const meshes=model.rootNodes.flatMap(node=>node.getChildMeshes(false));
   const root = new TransformNode('Student', scene);
-  // Keep the importer's glTF handedness conversion below the movement root.
-  for (const mesh of model.meshes) {
-    if (!mesh.parent) mesh.parent = root;
-    mesh.isPickable = false;
-    mesh.receiveShadows = true;
-    if (mesh.getTotalVertices() > 0) shadows.addShadowCaster(mesh, false);
-  }
+  for(const node of model.rootNodes)node.parent=root;
+  for(const mesh of meshes){mesh.isPickable=false;mesh.receiveShadows=true;if(castShadow&&mesh.getTotalVertices()>0)shadows.addShadowCaster(mesh,false);}
   const groups = Object.fromEntries(clipNames.map(name => {
     const group = model.animationGroups.find(g => g.name === name);
     if (!group) throw new Error(`Student model is missing the ${name} animation`);
@@ -26,7 +27,7 @@ export async function createPlayer(scene: Scene, shadows: ShadowGenerator) {
     group.start(true);
     return [name, group];
   })) as Record<Clip, AnimationGroup>;
-  const face = model.meshes.find(mesh => mesh.name === 'FaceImage');
+  const face = meshes.find(mesh => mesh.name === 'FaceImage');
   if (!face || !model.skeletons.length) throw new Error('Student model is missing its face or skeleton');
 
   let active: Clip = 'Idle', waveRemaining = 0, lastSpeed = 0, sitting = false, frozen = true;
@@ -35,8 +36,8 @@ export async function createPlayer(scene: Scene, shadows: ShadowGenerator) {
     root,
     // Kept separate for a future per-player image customization flow.
     face,
-    wave() {
-      if (frozen || sitting || lastSpeed > .1) return false;
+    wave(force=false) {
+      if (!force && (frozen || sitting || lastSpeed > .1)) return false;
       groups.Wave.goToFrame(groups.Wave.from);
       waveRemaining = waveDuration;
       return true;
@@ -58,6 +59,8 @@ export async function createPlayer(scene: Scene, shadows: ShadowGenerator) {
       }
       // Sit's hip lowering is baked into the clip; the movement root stays on the ground.
     },
+    dispose(){for(const mesh of meshes)shadows.removeShadowCaster(mesh);model.dispose();root.dispose();},
+    setShadows(enabled:boolean){if(castShadow===enabled)return;castShadow=enabled;for(const mesh of meshes)if(mesh.getTotalVertices()>0){if(enabled)shadows.addShadowCaster(mesh,false);else shadows.removeShadowCaster(mesh);}},
     snapshot: () => ({
       animation: active,
       animationPaused: frozen,

@@ -18,6 +18,10 @@ import { createPlayer } from './game/player';
 import { SPAWN, movePlayer, getPlace, parseSave } from './game/state';
 import { createUI, type Settings } from './ui';
 import { Ambience } from './game/audio';
+import { CampusConnection } from './game/network';
+import { RemotePlayers } from './game/remotes';
+import { predict } from '../shared/simulation';
+import { STEP_MS } from '../shared/protocol';
 
 const ui = createUI();
 async function boot() {
@@ -37,6 +41,7 @@ async function boot() {
   // Let the loading state paint before constructing the campus.
   await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
   const world=buildWorld(scene,shadows);
+  const treeStats=await world.trees;
   const smoke = import.meta.env.DEV && new URLSearchParams(location.search).has('smoke');
   const saveKey = smoke ? 'campus-test-position' : 'campus-position';
   const player=await createPlayer(scene,shadows);
@@ -50,6 +55,27 @@ async function boot() {
   const audio=new Ambience();
   let joystick={x:0,y:0}, lastSaved=0;
   let currentSettings=ui.settings;
+  let online=false,networkPosition={x:SPAWN.x,z:SPAWN.z,rotation:Math.PI,speed:0},inputTime=0,wasMoving=false,lastWave=0;
+  let population=0,reserved=0,connectionState='offline';
+  const remotes=new RemotePlayers(scene,shadows,error=>{console.error('Remote avatar',error);ui.toast('A student avatar could not load. Refresh to retry.');});
+  const network=new CampusConnection({
+    status(status){connectionState=status;ui.connection(status,population,reserved);if(status==='online'){started=true;paused=!!document.querySelector('dialog[open]');ui.begin();applySettings(currentSettings);}else if(status!=='offline'){clearInput();wasMoving=false;}},
+    error(message){ui.toast(message);},
+    state(state,welcome){
+      world.setDoors(state.doors);population=state.count;reserved=state.reserved;
+      const own=network.players.get(network.id);
+      if(own){
+        const seatChanged=(seated?.id??null)!==own.seatId;
+        seated=own.seatId?world.interactions.find(i=>i.id===own.seatId):undefined;
+        networkPosition={x:own.x,z:own.z,rotation:own.rotation,speed:own.speed};
+        for(const input of network.pending)networkPosition=predict(networkPosition,input,world.obstacles);
+        if(welcome||seatChanged||Math.hypot(player.root.position.x-networkPosition.x,player.root.position.z-networkPosition.z)>2){player.root.position.set(networkPosition.x,.05,networkPosition.z);player.root.rotation.y=networkPosition.rotation;}
+        if(!welcome&&own.wave!==lastWave)player.wave(true);lastWave=own.wave;
+      }
+      remotes.sync(network.players,network.id);ui.connection('online',population,reserved);
+    },
+  });
+  const wave=()=>{if(online){if(network.ready)network.action('wave');}else player.wave();};
   const playerMeshes=player.root.getChildMeshes();
   const applySettings=(settings:Settings)=>{
     currentSettings=settings;
@@ -63,12 +89,20 @@ async function boot() {
   };
   const clearInput=()=>{keys.clear();joystick={x:0,y:0};const knob=document.getElementById('joystick-knob')!;knob.style.transform='';};
   const save=()=>{
+    if(online)return;
     const p=seated?standingPosition:player.root.position;
     try{localStorage.setItem(saveKey,JSON.stringify({version:1,x:p.x,z:p.z,yaw,visited:[...visited]}));}catch{/* Private browsing may not permit persistence. */}
   };
   const stand=()=>{if(!seated)return;player.root.position.set(standingPosition.x,.05,standingPosition.z);seated=undefined;};
   const interact=()=>{
     if(paused)return;
+    if(online){
+      if(!network.ready)return;
+      if(seated)network.action('stand');
+      else if(nearest?.kind==='sign')ui.showSign();
+      else if(nearest)network.action(nearest.kind==='door'?'door':'sit',nearest.id);
+      return;
+    }
     if(seated){stand();return;}
     if(!nearest)return;
     if(nearest.kind==='seat'&&nearest.seat){standingPosition={x:player.root.position.x,z:player.root.position.z};seated=nearest;player.root.position.set(nearest.seat.x,.05,nearest.seat.z);player.root.rotation.y=nearest.seat.rotation;}
@@ -76,10 +110,18 @@ async function boot() {
     else { const message=nearest.action(player.root.position); if(message)ui.toast(message); }
   };
   ui.bind({
-    start(){started=true;paused=false;applySettings(currentSettings);ui.toast(matchMedia('(pointer:coarse)').matches?'Use the joystick to walk. Swipe to look around.':'WASD to walk · Drag to look · E to interact');},
-    pause(value){paused=value;clearInput();audio.setEnabled(started&&!paused&&currentSettings.sound);},
+    start(mode,name){
+      if(mode==='online'){
+        if(network.ready||['connecting','reconnecting'].includes(connectionState))return;
+        save();online=true;paused=true;clearInput();network.connect(name);return;
+      }
+      const wasOnline=online;online=false;network.disconnect();remotes.clear();world.setDoors({});
+      if(wasOnline){seated=undefined;let restore=null;try{restore=parseSave(localStorage.getItem(saveKey),world.obstacles);}catch{}player.root.position.set(restore?.x??SPAWN.x,.05,restore?.z??SPAWN.z);yaw=restore?.yaw??0;}
+      started=true;paused=false;ui.begin();applySettings(currentSettings);ui.toast(matchMedia('(pointer:coarse)').matches?'Use the joystick to walk. Swipe to look around.':'WASD to walk · Drag to look · E to interact');
+    },
+    pause(value){paused=value;clearInput();if(online)network.stop();audio.setEnabled(started&&!paused&&currentSettings.sound);},
     interact,
-    reset(){stand();player.root.position.set(SPAWN.x,.05,SPAWN.z);yaw=0;pitch=.18;player.root.rotation.y=Math.PI;save();ui.toast('Back at the campus entrance.');},
+    reset(){if(online){network.action('reset');return;}stand();player.root.position.set(SPAWN.x,.05,SPAWN.z);yaw=0;pitch=.18;player.root.rotation.y=Math.PI;save();ui.toast('Back at the campus entrance.');},
     settings:applySettings,
   });
   applySettings(currentSettings);
@@ -87,13 +129,14 @@ async function boot() {
   window.addEventListener('keydown',e=>{
     if(paused||e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;
     if(movementCodes.includes(e.code)){e.preventDefault();keys.add(e.code);}
-    if(e.code==='KeyQ'&&!e.repeat){e.preventDefault();player.wave();}
+    if(e.code==='KeyQ'&&!e.repeat){e.preventDefault();wave();}
     if(e.code==='KeyE'&&!e.repeat){e.preventDefault();interact();}
   });
   window.addEventListener('keyup',e=>keys.delete(e.code));
-  window.addEventListener('blur',()=>{clearInput();save();});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearInput();save();audio.setEnabled(false);}else audio.setEnabled(started&&!paused&&currentSettings.sound);});
-  window.addEventListener('pagehide',save);
+  window.addEventListener('blur',()=>{clearInput();if(online)network.stop();save();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearInput();if(online)network.stop();save();audio.setEnabled(false);}else audio.setEnabled(started&&!paused&&currentSettings.sound);});
+  window.addEventListener('pagehide',()=>{save();if(online)network.disconnect(true);});
+  window.addEventListener('pageshow',e=>{if(e.persisted&&online)network.connect((document.getElementById('display-name') as HTMLInputElement).value||'Guest');});
   let dragId:number|undefined,lastX=0,lastY=0;
   ui.canvas.addEventListener('pointerdown',e=>{if(paused)return;dragId=e.pointerId;lastX=e.clientX;lastY=e.clientY;ui.canvas.setPointerCapture(e.pointerId);});
   ui.canvas.addEventListener('pointermove',e=>{if(paused||dragId!==e.pointerId)return;yaw+=(e.clientX-lastX)*.005*currentSettings.sensitivity;pitch=Math.max(-.12,Math.min(.9,pitch+(e.clientY-lastY)*.004*currentSettings.sensitivity));lastX=e.clientX;lastY=e.clientY;});
@@ -108,7 +151,7 @@ async function boot() {
   stick.addEventListener('pointermove',e=>{if(stickId===e.pointerId&&!paused)updateStick(e);});
   const releaseStick=()=>{stickId=undefined;joystick={x:0,y:0};knob.style.transform='';};
   stick.addEventListener('pointerup',releaseStick);stick.addEventListener('pointercancel',releaseStick);stick.addEventListener('lostpointercapture',releaseStick);
-  document.getElementById('wave-button')!.onclick=()=>{if(!paused)player.wave();};
+  document.getElementById('wave-button')!.onclick=()=>{if(!paused)wave();};
   document.getElementById('run-button')!.onclick=()=>{run=!run;document.getElementById('run-button')!.classList.toggle('active',run);};
   window.addEventListener('resize',()=>engine.resize());
   window.addEventListener('orientationchange',()=>setTimeout(()=>engine.resize(),150));
@@ -132,12 +175,12 @@ async function boot() {
   updateCamera(.016,true);
   // Dev-only inspection lets browser tests verify real movement and interaction state.
   if(import.meta.env.DEV)Object.assign(window,{__campus:{
-    snapshot:()=>({x:player.root.position.x,z:player.root.position.z,yaw,paused,seated:!!seated,place:getPlace(player.root.position).name,interaction:nearest?.id,meshes:scene.meshes.length,fps:engine.getFps(),player:player.snapshot()}),
+    snapshot:()=>({x:player.root.position.x,z:player.root.position.z,yaw,paused,seated:!!seated,place:getPlace(player.root.position).name,interaction:nearest?.id,meshes:scene.meshes.length,fps:engine.getFps(),player:player.snapshot(),trees:treeStats,online,connected:network.ready,remotePlayers:remotes.count,population}),
   }});
   scene.executeWhenReady(()=>{
     ui.ready();
     if(smoke) void import('./game/smoke').then(({runSmoke})=>runSmoke({
-      snapshot:()=>({x:player.root.position.x,z:player.root.position.z,paused,seated:!!seated,place:getPlace(player.root.position).name,interaction:nearest?.id,fps:engine.getFps(),player:player.snapshot()}),
+      snapshot:()=>({x:player.root.position.x,z:player.root.position.z,paused,seated:!!seated,place:getPlace(player.root.position).name,interaction:nearest?.id,fps:engine.getFps(),player:player.snapshot(),trees:treeStats,online,connected:network.ready,remotePlayers:remotes.count,population}),
     }));
   });
   engine.runRenderLoop(()=>{
@@ -148,7 +191,7 @@ async function boot() {
       let forward=(keys.has('KeyW')||keys.has('ArrowUp')?1:0)-(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-joystick.y;
       let right=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+joystick.x;
       const len=Math.hypot(forward,right);
-      if(len>.08){
+      if(len>.08&&!online){
         if(seated)stand();
         if(len>1){forward/=len;right/=len;}
         const pace=run||keys.has('ShiftLeft')||keys.has('ShiftRight')?5.8:3.1;
@@ -159,6 +202,18 @@ async function boot() {
         speed=Math.hypot(actualX,actualZ)/dt;player.root.position.x=p.x;player.root.position.z=p.z;
         if(speed>.1){const desiredAngle=Math.atan2(actualX,actualZ);const diff=Math.atan2(Math.sin(desiredAngle-player.root.rotation.y),Math.cos(desiredAngle-player.root.rotation.y));player.root.rotation.y+=diff*Math.min(1,dt*12);}
       }
+      if(online&&network.ready){
+        inputTime+=dt;
+        while(inputTime>=STEP_MS/1000){
+          inputTime-=STEP_MS/1000;
+          if(len>.08){
+            const norm=Math.max(1,len);
+            const x=(-Math.sin(yaw)*forward-Math.cos(yaw)*right)/norm,z=(-Math.cos(yaw)*forward+Math.sin(yaw)*right)/norm;
+            const input=network.input(x,z,run||keys.has('ShiftLeft')||keys.has('ShiftRight'));
+            if(input){networkPosition=predict(networkPosition,input,world.obstacles);wasMoving=true;}
+          }else if(wasMoving){network.stop();wasMoving=false;networkPosition.speed=0;}
+        }
+      }else inputTime=0;
       const p=player.root.position;
       let best=2.5;nearest=undefined;
       for(const obj of world.interactions){const d=Math.hypot(p.x-obj.x,p.z-obj.z);if(d<best){best=d;nearest=obj;}}
@@ -167,8 +222,17 @@ async function boot() {
       if(place.id!=='grounds'&&place.id!=='hall')visited.add(place.id);
       ui.location(place,Math.min(5,visited.size));
       if(performance.now()-lastSaved>5000){save();lastSaved=performance.now();}
-      world.update(dt);
+
     }else ui.prompt(null);
+    if(online&&network.ready){
+      const blend=1-Math.exp(-22*dt);
+      player.root.position.x+=(networkPosition.x-player.root.position.x)*blend;
+      player.root.position.z+=(networkPosition.z-player.root.position.z)*blend;
+      const angle=Math.atan2(Math.sin(networkPosition.rotation-player.root.rotation.y),Math.cos(networkPosition.rotation-player.root.rotation.y));player.root.rotation.y+=angle*blend;
+      speed=networkPosition.speed;
+    }
+    if(!paused||online)world.update(dt);
+    remotes.update(dt,player.root.position,currentSettings.quality==='low');
     player.animate(dt,speed,!!seated,paused);
     updateCamera(dt);
     if(frame%6===0)ui.updateMap(player.root.position,yaw);
