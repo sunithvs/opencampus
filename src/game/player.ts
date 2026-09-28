@@ -1,3 +1,5 @@
+import { Texture } from '@babylonjs/core/Materials/Textures/texture';
+import type { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial';
 import { Scene } from '@babylonjs/core/scene';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader';
@@ -30,12 +32,30 @@ export async function createPlayer(scene: Scene, shadows: ShadowGenerator, castS
   const face = meshes.find(mesh => mesh.name === 'FaceImage');
   if (!face || !model.skeletons.length) throw new Error('Student model is missing its face or skeleton');
 
+  const originalFaceMaterial=face.material as PBRMaterial;
+  const faceMaterial=originalFaceMaterial.clone(`Face-${root.uniqueId}`)!;
+  const defaultFace=faceMaterial.albedoTexture;face.material=faceMaterial;
+  let faceTexture:Texture|undefined,faceGeneration=0,disposed=false,faceSource:string|null=null;
+  async function setFace(url:string|null){
+    if(disposed)return;
+    const generation=++faceGeneration;
+    if(url===faceSource)return;
+    if(!url){faceMaterial.albedoTexture=defaultFace;faceTexture?.dispose();faceTexture=undefined;faceSource=null;return;}
+    let texture:Texture|undefined;
+    try{
+      await new Promise<void>((resolve,reject)=>{
+        // glTF UVs use unflipped images; each avatar owns its replacement texture.
+        texture=new Texture(url!,scene,false,false,Texture.TRILINEAR_SAMPLINGMODE,resolve,(_message,error)=>reject(error??Error('Face image could not load.')));
+      });
+      if(disposed||generation!==faceGeneration){texture?.dispose();return;}
+      faceMaterial.albedoTexture=texture!;faceTexture?.dispose();faceTexture=texture;faceSource=url;
+    }catch(error){texture?.dispose();if(disposed||generation!==faceGeneration)return;throw error;}
+  }
   let active: Clip = 'Idle', waveRemaining = 0, lastSpeed = 0, sitting = false, frozen = true;
   const waveDuration = (groups.Wave.to - groups.Wave.from) / groups.Wave.targetedAnimations[0].animation.framePerSecond;
   return {
     root,
-    // Kept separate for a future per-player image customization flow.
-    face,
+    face, setFace,
     wave(force=false) {
       if (!force && (frozen || sitting || lastSpeed > .1)) return false;
       groups.Wave.goToFrame(groups.Wave.from);
@@ -59,14 +79,14 @@ export async function createPlayer(scene: Scene, shadows: ShadowGenerator, castS
       }
       // Sit's hip lowering is baked into the clip; the movement root stays on the ground.
     },
-    dispose(){for(const mesh of meshes)shadows.removeShadowCaster(mesh);model.dispose();root.dispose();},
+    dispose(){disposed=true;faceGeneration++;faceTexture?.dispose();if(defaultFace!==originalFaceMaterial.albedoTexture)defaultFace?.dispose();faceMaterial.dispose(false,false);for(const mesh of meshes)shadows.removeShadowCaster(mesh);model.dispose();root.dispose();},
     setShadows(enabled:boolean){if(castShadow===enabled)return;castShadow=enabled;for(const mesh of meshes)if(mesh.getTotalVertices()>0){if(enabled)shadows.addShadowCaster(mesh,false);else shadows.removeShadowCaster(mesh);}},
     snapshot: () => ({
       animation: active,
       animationPaused: frozen,
       clips: [...clipNames],
       bones: model.skeletons[0].bones.length,
-      face: face.name,
+      face: face.name, customFace:!!faceTexture, faceMaterial:faceMaterial.uniqueId,
       weights: Object.fromEntries(clipNames.map(name => [name, groups[name].weight])),
       animationFrame: groups[active].animatables[0]?.masterFrame ?? 0,
     }),

@@ -1,3 +1,4 @@
+import { facePath } from '../../shared/face';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture';
@@ -20,13 +21,14 @@ export class RemotePlayers {
     for(const [id,p] of this.desired){
       const r=this.remotes.get(id);
       if(r){
-        const last=r.frames.at(-1);if(last?.player.name!==p.name)drawName(r.texture,p.name);if(!last||JSON.stringify(last.player)!==JSON.stringify(p)){r.frames.push({at:performance.now(),player:{...p}});if(r.frames.length>12)r.frames.shift();}
+        const last=r.frames.at(-1);if(last?.player.faceVersion!==p.faceVersion)void r.avatar.setFace(p.faceVersion?facePath(id,p.faceVersion):null).catch(this.onError);if(last?.player.name!==p.name)drawName(r.texture,p.name);if(!last||JSON.stringify(last.player)!==JSON.stringify(p)){r.frames.push({at:performance.now(),player:{...p}});if(r.frames.length>12)r.frames.shift();}
         if(p.wave!==r.wave){r.wave=p.wave;r.avatar.wave(true);}
       }else if(!this.pending.has(id)){
         const marker=Symbol(id);this.pending.set(id,marker);
         void createPlayer(this.scene,this.shadows,false).then(avatar=>{
           if(this.pending.get(id)!==marker||!this.desired.has(id)){avatar.dispose();return;}
           this.pending.delete(id);const player=this.desired.get(id)!;
+          void avatar.setFace(player.faceVersion?facePath(id,player.faceVersion):null).catch(this.onError);
           const texture=new DynamicTexture(`name-${id}`,{width:512,height:96},this.scene,true);drawName(texture,player.name);
           const material=new StandardMaterial(`name-${id}`,this.scene);material.diffuseTexture=texture;material.emissiveColor=Color3.White();material.disableLighting=true;material.backFaceCulling=false;
           const label=MeshBuilder.CreatePlane(`name-${id}`,{width:1.7,height:.32},this.scene);label.material=material;label.billboardMode=Mesh.BILLBOARDMODE_ALL;label.parent=avatar.root;label.position.y=2.25;label.isPickable=false;
@@ -53,6 +55,7 @@ export class RemotePlayers {
   }
   private dispose(r:Remote){r.label.dispose();r.material.dispose();r.texture.dispose();r.avatar.dispose();}
   clear(){this.desired.clear();this.pending.clear();for(const r of this.remotes.values())this.dispose(r);this.remotes.clear();}
+  snapshot(){return [...this.remotes].map(([id,r])=>({id,...r.avatar.snapshot()}));}
   get count(){return this.remotes.size;}
 }
 

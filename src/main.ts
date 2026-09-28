@@ -1,3 +1,5 @@
+import { createFaceEditor } from './face-editor';
+import { faceBlob, loadFace } from './game/face-store';
 import './style.css';
 import { Engine } from '@babylonjs/core/Engines/engine';
 import { Scene } from '@babylonjs/core/scene';
@@ -45,6 +47,9 @@ async function boot() {
   const smoke = import.meta.env.DEV && new URLSearchParams(location.search).has('smoke');
   const saveKey = smoke ? 'campus-test-position' : 'campus-position';
   const player=await createPlayer(scene,shadows);
+  const faceKey=smoke?'campus-test-face':'campus-face';
+  let faceImage=loadFace(faceKey);
+  await player.setFace(faceImage).catch(()=>{faceImage=null;});
   let rawSave: string|null=null;try{rawSave=smoke ? null : localStorage.getItem(saveKey);}catch{/* Local saves are optional. */}
   const saved=parseSave(rawSave,world.obstacles);
   player.root.position.set(saved?.x??SPAWN.x,.05,saved?.z??SPAWN.z);
@@ -59,7 +64,7 @@ async function boot() {
   let population=0,reserved=0,connectionState='offline';
   const remotes=new RemotePlayers(scene,shadows,error=>{console.error('Remote avatar',error);ui.toast('A student avatar could not load. Refresh to retry.');});
   const network=new CampusConnection({
-    status(status){connectionState=status;ui.connection(status,population,reserved);if(status==='online'){started=true;paused=!!document.querySelector('dialog[open]');ui.begin();applySettings(currentSettings);}else if(status!=='offline'){clearInput();wasMoving=false;}},
+    status(status){connectionState=status;ui.connection(status,population,reserved);if(status==='online'){started=true;paused=!!document.querySelector('dialog[open]');ui.begin();applySettings(currentSettings);if(faceImage)void network.updateFace(faceBlob(faceImage)).catch(error=>ui.toast(`Your face is saved here, but could not be shared. ${error.message}`));}else if(status!=='offline'){clearInput();wasMoving=false;}},
     error(message){ui.toast(message);},
     state(state,welcome){
       world.setDoors(state.doors);population=state.count;reserved=state.reserved;
@@ -124,6 +129,13 @@ async function boot() {
     reset(){if(online){network.action('reset');return;}stand();player.root.position.set(SPAWN.x,.05,SPAWN.z);yaw=0;pitch=.18;player.root.rotation.y=Math.PI;save();ui.toast('Back at the campus entrance.');},
     settings:applySettings,
   });
+  createFaceEditor({getSaved:()=>faceImage,open:ui.openFace,async apply(data){
+    if(online)await network.updateFace(data?faceBlob(data):null);
+    await player.setFace(data);faceImage=data;
+    let remembered=true;
+    try{if(data)localStorage.setItem(faceKey,data);else localStorage.removeItem(faceKey);}catch{remembered=false;}
+    ui.toast(remembered?(data?'Your new face is ready.':'Default face restored.'):'Face updated for this visit. This browser could not save it for next time.');
+  }});
   applySettings(currentSettings);
   const movementCodes=['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'];
   window.addEventListener('keydown',e=>{
@@ -175,12 +187,12 @@ async function boot() {
   updateCamera(.016,true);
   // Dev-only inspection lets browser tests verify real movement and interaction state.
   if(import.meta.env.DEV)Object.assign(window,{__campus:{
-    snapshot:()=>({x:player.root.position.x,z:player.root.position.z,yaw,paused,seated:!!seated,place:getPlace(player.root.position).name,interaction:nearest?.id,meshes:scene.meshes.length,fps:engine.getFps(),player:player.snapshot(),trees:treeStats,online,connected:network.ready,remotePlayers:remotes.count,population}),
+    snapshot:()=>({x:player.root.position.x,z:player.root.position.z,yaw,paused,seated:!!seated,place:getPlace(player.root.position).name,interaction:nearest?.id,meshes:scene.meshes.length,fps:engine.getFps(),player:player.snapshot(),trees:treeStats,online,connected:network.ready,remotePlayers:remotes.count,remoteFaces:remotes.snapshot(),population}),
   }});
   scene.executeWhenReady(()=>{
     ui.ready();
-    if(smoke) void import('./game/smoke').then(({runSmoke})=>runSmoke({
-      snapshot:()=>({x:player.root.position.x,z:player.root.position.z,paused,seated:!!seated,place:getPlace(player.root.position).name,interaction:nearest?.id,fps:engine.getFps(),player:player.snapshot(),trees:treeStats,online,connected:network.ready,remotePlayers:remotes.count,population}),
+    if(smoke) void (new URLSearchParams(location.search).get('smoke')==='face'?import('./game/face-smoke'):import('./game/smoke')).then(({runSmoke})=>runSmoke({
+      snapshot:()=>({x:player.root.position.x,z:player.root.position.z,paused,seated:!!seated,place:getPlace(player.root.position).name,interaction:nearest?.id,fps:engine.getFps(),player:player.snapshot(),trees:treeStats,online,connected:network.ready,remotePlayers:remotes.count,remoteFaces:remotes.snapshot(),population}),
     }));
   });
   engine.runRenderLoop(()=>{

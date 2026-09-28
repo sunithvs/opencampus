@@ -88,6 +88,16 @@ The current terrain is flat. Upper floors and background buildings are exterior 
 - `src/ui.ts` / `src/style.css`: responsive HUD, maps, settings, instructions, touch controls.
 - `src/game/audio.ts`: optional generated ambient wind and birds, activated after a user gesture.
 
+## Custom face images
+
+Use **Customize your face** on the welcome screen, or **Settings → Change face image** while playing. Choose a JPG, PNG, or WebP (up to 8 MB), drag to frame it, adjust zoom/position, then choose **Use this face**. The preview is always square. **Use default face** removes the custom image. Closing the editor before applying leaves the saved face unchanged.
+
+The browser crops and re-encodes a 256 × 256 JPEG (at most 48 KiB). Only this crop is uploaded; the original file, filename, and original metadata stay on the device. The crop is remembered locally and works offline. Joining multiplayer shares it with everyone in the public campus.
+
+Face uploads use the active guest session token in an authorization header. The server validates the format, dimensions, size, and update rate. Images live separately from movement snapshots; each avatar owns its face material and replacement texture. Late joiners and reconnecting guests receive the current image revision. Hosted crops are deleted when removed, when a player leaves explicitly, or when their reconnect reservation expires. No account profile, R2 bucket, or additional migration is needed: these small session images use the existing Durable Object storage. The local saved choice remains until reset and is uploaded again on the next join.
+
+`/?smoke=face` in development checks that a second guest's uploaded face renders independently, resets correctly, and is disposed when the guest leaves. The network integration suite also checks authenticated uploads, image validation, late joins, reconnects, and removal. Test fixtures are synthetic images under `scripts/fixtures/`.
+
 ## Multiplayer
 
 Choose a display name and **Join public campus**. There is one shared campus with a 50-player limit, no room selector, and no overflow rooms. Names are guest labels, not authenticated identities. Players can walk through each other.

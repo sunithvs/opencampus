@@ -1,3 +1,4 @@
+import { MAX_FACE_BYTES, validFaceJpeg } from '../shared/face';
 import { DurableObject } from 'cloudflare:workers';
 import { CampusSimulation, type SavedSession, type Session } from '../shared/simulation';
 import { parseMessage, PROTOCOL_VERSION, type ServerMessage } from '../shared/protocol';
@@ -7,6 +8,22 @@ type Attachment=Connection&{session?:SavedSession};
 export default {
   async fetch(request:Request,env:Env):Promise<Response>{
     const url=new URL(request.url);
+    if(url.pathname==='/api/campus/face'||/^\/api\/campus\/faces\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/.test(url.pathname)){
+      if(url.pathname==='/api/campus/face'){
+        if(!['PUT','DELETE'].includes(request.method))return new Response('Method not allowed',{status:405});
+        if(request.headers.get('Origin')!==url.origin)return new Response('Origin not allowed',{status:403});
+      }else if(request.method!=='GET')return new Response('Method not allowed',{status:405});
+      if(request.method==='PUT'){
+        // Bound and consume the inbound stream before forwarding it. Rejected
+        // uploads must not leave an unread body on a reused HTTP connection.
+        const reader=request.body?.getReader();if(!reader)return new Response('Image required.',{status:400});
+        const chunks:Uint8Array[]=[];let size=0;
+        for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>MAX_FACE_BYTES){await reader.cancel();return new Response('Image is too large.',{status:413});}chunks.push(value);}
+        const bytes=new Uint8Array(size);let at=0;for(const chunk of chunks){bytes.set(chunk,at);at+=chunk.length;}
+        request=new Request(request,{body:bytes});
+      }
+      return env.CAMPUS.getByName('public-campus-v1').fetch(request);
+    }
     if(url.pathname==='/api/campus'||url.pathname==='/api/campus/status'){
       if(request.method!=='GET')return new Response('Method not allowed',{status:405});
       if(url.pathname==='/api/campus'){
@@ -27,6 +44,8 @@ export class CampusRoom extends DurableObject<Env> {
   private ticks=0;
   private lastWork=0;
   private steppedAt=0;
+  private faceOwners=new Set<string>();
+  private faceUpdated=new Map<string,number>();
   constructor(ctx:DurableObjectState,env:Env){
     super(ctx,env);
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));
@@ -41,11 +60,16 @@ export class CampusRoom extends DurableObject<Env> {
         if(a.session){this.sim.restore({...a.session,online:true});}
       }
       this.sim.expire(Date.now());
+      this.faceOwners=new Set(await ctx.storage.get<string[]>('faceOwners')??[]);
+      await this.pruneFaces();
     });
   }
   async fetch(request:Request){
     this.sim.expire(Date.now());
-    if(new URL(request.url).pathname.endsWith('/status'))return Response.json({online:[...this.sim.sessions.values()].filter(s=>s.online).length,reserved:[...this.sim.sessions.values()].filter(s=>!s.online).length,capacity:50},{headers:{'Cache-Control':'no-store'}});
+    const path=new URL(request.url).pathname;
+    if(path==='/api/campus/face')return this.updateFace(request);
+    if(path.startsWith('/api/campus/faces/'))return this.readFace(path);
+    if(path.endsWith('/status'))return Response.json({online:[...this.sim.sessions.values()].filter(s=>s.online).length,reserved:[...this.sim.sessions.values()].filter(s=>!s.online).length,capacity:50},{headers:{'Cache-Control':'no-store'}});
     if(this.connections.size>=60)return new Response('Campus busy. Please retry shortly.',{status:503});
     const [client,server]=Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
@@ -73,7 +97,7 @@ export class CampusRoom extends DurableObject<Env> {
       for(const [old,oldC] of this.connections)if(old!==ws&&oldC.id===s.player.id){this.connections.delete(old);old.close(4009,'Session resumed elsewhere');}
       c.id=s.player.id;this.attach(ws,c);
       this.send(ws,{type:'welcome',version:PROTOCOL_VERSION,id:s.player.id,resumeToken:s.token,state:this.sim.snapshot(now,true)!});
-      this.broadcast();await this.persistReservations();await this.scheduleAlarm();return;
+      this.broadcast();await this.persistReservations();await this.pruneFaces();await this.scheduleAlarm();return;
     }
     const s=c.id?this.sim.sessions.get(c.id):undefined;
     if(!s){ws.close(4002,'Join first');await this.drop(ws,false);return;}
@@ -89,6 +113,48 @@ export class CampusRoom extends DurableObject<Env> {
       if(m.action==='door'&&!error)await this.ctx.storage.put('doors',this.sim.campus.doors);
       this.broadcast();
     }
+  }
+  private async readFace(path:string){
+    const [, , , ,id,version]=path.split('/');
+    const session=this.sim.sessions.get(id);
+    if(!session||session.player.faceVersion!==version)return new Response('Face not found',{status:404});
+    const bytes=await this.ctx.storage.get<Uint8Array>(`face:${id}`);
+    return bytes?new Response(bytes,{headers:{'Content-Type':'image/jpeg','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}}):new Response('Face not found',{status:404});
+  }
+  private async updateFace(request:Request):Promise<Response>{
+    const token=request.headers.get('Authorization')?.replace(/^Bearer /,'');
+    const session=[...this.sim.sessions.values()].find(s=>s.online&&s.token===token);
+    if(!session){await request.body?.cancel();return new Response('Join the campus before updating your face.',{status:401});}
+    const id=session.player.id;
+    if(Date.now()-(this.faceUpdated.get(id)??0)<1000){await request.body?.cancel();return new Response('Wait a moment before changing your face again.',{status:429});}
+    this.faceUpdated.set(id,Date.now());
+    let bytes:Uint8Array|undefined;
+    if(request.method==='PUT'){
+      if(request.headers.get('Content-Type')!=='image/jpeg'){await request.body?.cancel();return new Response('Use a cropped JPEG image.',{status:415});}
+      const reader=request.body?.getReader();if(!reader)return new Response('Image required.',{status:400});
+      const chunks:Uint8Array[]=[];let size=0;
+      try{
+        for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>MAX_FACE_BYTES){await reader.cancel();return new Response('Image is too large.',{status:413});}chunks.push(value);}
+      }catch{return new Response('Image upload interrupted.',{status:400});}
+      bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
+      if(!validFaceJpeg(bytes))return new Response('Use a 256 × 256 cropped JPEG image.',{status:400});
+    }
+    return this.ctx.blockConcurrencyWhile(async()=>{
+      if(this.sim.sessions.get(id)!==session||!session.online)return new Response('Your session changed. Rejoin and try again.',{status:409});
+      if(bytes){await this.ctx.storage.put(`face:${id}`,bytes);this.faceOwners.add(id);session.player.faceVersion=crypto.randomUUID();}
+      else {await this.ctx.storage.delete(`face:${id}`);this.faceOwners.delete(id);session.player.faceVersion=null;}
+      await this.ctx.storage.put('faceOwners',[...this.faceOwners]);
+      this.broadcast();
+      return Response.json({faceVersion:session.player.faceVersion},{headers:{'Cache-Control':'no-store'}});
+    });
+  }
+  private async pruneFaces(){
+    const expired=[...this.faceOwners].filter(id=>!this.sim.sessions.has(id));
+    for(const id of this.faceUpdated.keys())if(!this.sim.sessions.has(id))this.faceUpdated.delete(id);
+    if(!expired.length)return;
+    for(const id of expired)this.faceOwners.delete(id);
+    await this.ctx.storage.delete(expired.map(id=>`face:${id}`));
+    await this.ctx.storage.put('faceOwners',[...this.faceOwners]);
   }
   private startLoop(){
     if(this.timer)return;
@@ -111,7 +177,7 @@ export class CampusRoom extends DurableObject<Env> {
   private async drop(ws:WebSocket,reserve:boolean){
     const c=this.connections.get(ws);if(!c)return;this.connections.delete(ws);
     if(c.id)this.sim.disconnect(c.id,Date.now(),reserve);
-    this.broadcast();await this.persistReservations();await this.scheduleAlarm();
+    this.broadcast();await this.persistReservations();await this.pruneFaces();await this.scheduleAlarm();
   }
   async webSocketClose(ws:WebSocket,code:number){await this.drop(ws,code!==1000&&code!==4008&&code!==4002);}
   async webSocketError(ws:WebSocket){await this.drop(ws,true);}
@@ -129,6 +195,6 @@ export class CampusRoom extends DurableObject<Env> {
         ws.close(4000,'Connection timed out');await this.drop(ws,true);
       }
     }
-    this.broadcast();await this.persistReservations();await this.scheduleAlarm();
+    this.broadcast();await this.persistReservations();await this.pruneFaces();await this.scheduleAlarm();
   }
 }

@@ -51,6 +51,16 @@ export class CampusConnection {
     if(!this.ready||this.pending.length>=8)return null;
     const input:Input={type:'input',seq:++this.seq,x,z,run};this.pending.push(input);this.send(input);return input;
   }
+  async updateFace(image:Blob|null){
+    if(!this.ready)throw Error('Wait until you are connected, then try again.');
+    const id=this.id;
+    const response=await fetch('/api/campus/face',{
+      method:image?'PUT':'DELETE',headers:{Authorization:`Bearer ${this.token}`,...(image?{'Content-Type':'image/jpeg'}:{})},body:image,
+      signal:AbortSignal.timeout(15000),
+    });
+    if(!response.ok)throw Error(await response.text());
+    if(this.id!==id||!this.ready)throw Error('Your connection changed. Please try again.');
+  }
   action(action:'door'|'sit'|'stand'|'wave'|'reset',id?:string){this.send({type:'action',action,id});}
   stop(){if(this.ready)this.send({type:'stop'});}
   private send(value:object){if(this.ready&&this.socket?.readyState===WebSocket.OPEN)this.socket.send(JSON.stringify(value));}
