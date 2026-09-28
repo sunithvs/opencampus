@@ -11,6 +11,8 @@ import { Ray } from '@babylonjs/core/Culling/ray';
 import '@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent';
 import '@babylonjs/core/Shaders/shadowMap.vertex';
 import '@babylonjs/core/Shaders/shadowMap.fragment';
+import '@babylonjs/core/Shaders/kernelBlur.vertex';
+import '@babylonjs/core/Shaders/kernelBlur.fragment';
 import { buildWorld, type Interaction } from './game/world';
 import { createPlayer } from './game/player';
 import { SPAWN, movePlayer, getPlace, parseSave } from './game/state';
