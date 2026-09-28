@@ -4,7 +4,7 @@ A playable single-player 3D campus exploration prototype, inspired by the suppli
 
 ## Run
 
-Requires Node.js 20.19+ or 22.12+.
+Requires Node.js 22.12+; Cloudflare builds use Node 22 from `.node-version`.
 
 ```sh
 npm install
@@ -19,7 +19,42 @@ npm run preview  # Serve the production build
 npm test         # Collision, door state, and save validation checks
 ```
 
-Serve `dist/` on any static web host. Multiplayer hosting is a separate future requirement.
+## Cloudflare deployment
+
+The repository is configured for **Cloudflare Workers Static Assets**. `wrangler.jsonc` serves the Vite output in `dist/`. The game runs at `/`; unknown paths return 404 so missing scripts and models are not replaced with HTML. This deployment hosts the single-player browser game; it does not create a multiplayer server.
+
+Connect `sunithvs/opencampus` in Cloudflare **Workers & Pages → Create → Import a repository**, and use:
+
+| Setting | Value |
+| --- | --- |
+| Worker name | `opencampus` (must match `wrangler.jsonc`) |
+| Production branch | `main` |
+| Root directory | Repository root |
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
+| Node version | `22` (also recorded in `.node-version`) |
+
+Cloudflare's Git integration installs dependencies from `package-lock.json`. No application environment variables, database, or storage bindings are needed. Connect the repository in your Cloudflare account once; later pushes to the configured branch can then build and deploy automatically. Cloudflare will report the deployment URL. A custom domain can be attached afterward in the Worker's domain settings.
+
+For a manual deployment from your computer:
+
+```sh
+npx wrangler login  # Authorize your Cloudflare account once
+npm run deploy     # Builds current source, then publishes it
+```
+
+For local validation without publishing:
+
+```sh
+npm run cf:check    # Build and validate the Wrangler deployment bundle
+npm run cf:dev      # Serve the build through Cloudflare's local runtime on :8787
+```
+
+`public/_headers` is copied into the build. Hashed JavaScript/CSS assets receive long-lived caching; HTML and the stable-name GLB model revalidate so updates are picked up. Cloudflare credentials belong in your local Wrangler login or the hosting platform's secrets, never in this repository. `.wrangler`, `.env`, and `.dev.vars` files are ignored.
+
+If you already created a **Cloudflare Pages** project instead, it can serve the same static build: use build command `npm run build` and output directory `dist`, with the repository root as the root directory. Do not use the Workers deploy command in Pages; Pages publishes the output directory itself. The checked-in Wrangler configuration targets Workers.
+
+References: [Workers static assets](https://developers.cloudflare.com/workers/static-assets/), [Git build settings](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/), and [asset headers](https://developers.cloudflare.com/workers/static-assets/headers/).
 
 ## Controls
 

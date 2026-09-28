@@ -1,0 +1,17 @@
+# Vite filenames include content hashes, so these assets can be cached long-term.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Models have stable filenames: revalidate so a new avatar is not stuck in cache.
+/models/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
