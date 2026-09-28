@@ -1,0 +1,65 @@
+{
+  "asset": "Campus Student",
+  "height_m": 1.85,
+  "triangles": 5910,
+  "bones": 16,
+  "materials": 10,
+  "meshes": 2,
+  "face": {
+    "mesh": "FaceImage",
+    "material": "FaceImage",
+    "size_m": 0.272,
+    "uv": "Full 0\u20131 square, upright, no mirroring",
+    "texture": "face-placeholder.png"
+  },
+  "animations": [
+    {
+      "name": "Idle",
+      "frames": [
+        0,
+        90
+      ],
+      "seconds": 3.0,
+      "loop": true
+    },
+    {
+      "name": "Walk",
+      "frames": [
+        0,
+        30
+      ],
+      "seconds": 1.0,
+      "loop": true
+    },
+    {
+      "name": "Run",
+      "frames": [
+        0,
+        22
+      ],
+      "seconds": 0.7333333333333333,
+      "loop": true
+    },
+    {
+      "name": "Wave",
+      "frames": [
+        0,
+        75
+      ],
+      "seconds": 2.5,
+      "loop": false
+    },
+    {
+      "name": "Sit",
+      "frames": [
+        0,
+        90
+      ],
+      "seconds": 3.0,
+      "loop": true
+    }
+  ],
+  "forward": "Blender -Y, glTF +Z",
+  "license": "Original generated geometry; no third-party assets",
+  "export": "/Users/sunithvs/PycharmProjects/clg campus/public/models/campus-student.glb"
+}
